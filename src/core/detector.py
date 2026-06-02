@@ -27,8 +27,8 @@ class FaceDetectorTracker:
         
         if not is_mocked and not os.path.exists(self.model_path) and model_filename == "yolov8n-face.pt":
             os.makedirs(model_dir, exist_ok=True)
-            url1 = "https://github.com/derronqi/yolov8-face/releases/download/v1.0/yolov8n-face.pt"
-            url2 = "https://github.com/akanametov/yolo-face/releases/download/v0.0.0/yolov8n-face.pt"
+            url1 = "https://github.com/lindevs/yolov8-face/releases/latest/download/yolov8n-face-lindevs.pt"
+            url2 = "https://huggingface.co/arnabdhar/YOLOv8-Face-Detection/resolve/main/model.pt"
             
             print(f"Baixando modelo YOLOv8-face para: {self.model_path}")
             try:
@@ -38,8 +38,12 @@ class FaceDetectorTracker:
                 try:
                     urllib.request.urlretrieve(url2, self.model_path)
                 except Exception as e2:
-                    print(f"Falha ao baixar da URL alternativa: {e2}. Usando fallback para yolov8n.pt padrão.")
-                    self.model_path = "yolov8n.pt"
+                    raise FileNotFoundError(
+                        f"Não foi possível baixar o modelo YOLOv8-face a partir das URLs:\n"
+                        f"1. {url1}\n"
+                        f"2. {url2}\n"
+                        f"Erro: {e2}. Por favor, baixe o modelo manualmente e salve em {self.model_path}."
+                    ) from e2
 
         # Inicializa o modelo YOLO e o tracker DeepSort
         if is_mocked:
