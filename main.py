@@ -4,6 +4,7 @@ import csv
 import numpy as np
 from src.core.pipeline import ExperimentalPipeline
 from src.metrics.evaluator import PerformanceEvaluator
+from src.utils.model_downloader import ensure_all_onnx_models
 
 MODELOS = [
     "facenet", 
@@ -32,6 +33,11 @@ def main():
     recordings_dir = os.path.join(root_dir, "data", "recordings")
     results_dir = os.path.join(root_dir, "data", "results")
     os.makedirs(results_dir, exist_ok=True)
+
+    # Garante que todos os modelos ONNX necessários estejam presentes,
+    # realizando download automático dos que estiverem faltando.
+    models_dir = os.path.join(root_dir, "data", "models")
+    ensure_all_onnx_models(models_dir)
     
     evaluator = PerformanceEvaluator()
     summary_csv_path = os.path.join(results_dir, "data.csv")

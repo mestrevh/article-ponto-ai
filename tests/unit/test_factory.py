@@ -17,9 +17,11 @@ def test_factory_raises_error_for_invalid_model_string():
         ModelFactory.create("modelo_inexistente")
 
 @patch("src.models.factory.ONNXFaceRecognizer")
-def test_factory_instantiates_onnx_models(mock_onnx):
+@patch("src.models.factory.ensure_model", return_value="/fake/path/cosface.onnx")
+def test_factory_instantiates_onnx_models(mock_ensure, mock_onnx):
     """Garante a instanciação do wrapper ONNX para strings correspondentes."""
     # Testa um dos modelos ONNX
     model_cosface = ModelFactory.create("cosface")
     assert model_cosface is not None
+    mock_ensure.assert_called_once()
     mock_onnx.assert_called_once()

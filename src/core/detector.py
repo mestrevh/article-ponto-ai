@@ -58,7 +58,7 @@ class FaceDetectorTracker:
         Processa o frame atual e retorna uma lista de dicionários contendo
         as bboxes rastreadas e seus respectivos track_ids.
         """
-        predictions = self.model.predict(frame)
+        predictions = self.model.predict(frame, verbose=False)
         if len(predictions) == 0:
             return []
 

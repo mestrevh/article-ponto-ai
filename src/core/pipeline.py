@@ -5,6 +5,7 @@ import json
 import time
 import numpy as np
 from typing import Dict, Any, List, Optional
+from tqdm import tqdm
 from src.core.base import FaceRecognizer
 from src.models.factory import ModelFactory
 from src.core.database import VectorDatabase
@@ -52,6 +53,14 @@ class ExperimentalPipeline:
         # Mapeamento do Ground Truth específico deste vídeo
         video_name = os.path.basename(video_path)
         video_gt = self.ground_truth.get(video_name, {})
+        
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        pbar = tqdm(
+            total=total_frames if total_frames > 0 else None,
+            desc=f"  -> Processando {video_name}",
+            unit="f",
+            leave=False
+        )
         
         while cap.isOpened():
             ret, frame = cap.read()
@@ -140,7 +149,9 @@ class ExperimentalPipeline:
                         "label": label,
                         "retrieved_ids": retrieved_ids
                     })
-                
+            pbar.update(1)
+            
+        pbar.close()
         cap.release()
         
         # Consolidação de vencedores por track
