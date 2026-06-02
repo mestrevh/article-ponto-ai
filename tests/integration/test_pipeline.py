@@ -11,8 +11,8 @@ from src.core.pipeline import ExperimentalPipeline
 def test_pipeline_execution_and_resource_cleanup(mock_factory, mock_db_class, mock_detector_class, mock_video):
     """Garante a execução completa do fluxo e a liberação correta de memória RAM/VRAM."""
     mock_cap = MagicMock()
-    mock_cap.isOpened.side_effect = [True, True, False]
-    mock_cap.read.return_value = (True, np.zeros((480, 640, 3)))
+    mock_cap.isOpened.side_effect = [True, True, True, False]
+    mock_cap.read.return_value = (True, np.zeros((480, 640, 3), dtype=np.uint8))
     mock_video.return_value = mock_cap
     
     # Mock detector para retornar um rastro

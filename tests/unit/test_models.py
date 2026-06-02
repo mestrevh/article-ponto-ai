@@ -47,7 +47,7 @@ def test_onnx_model_output_is_l2_normalized_and_has_correct_dimension(mock_exist
     mock_session.return_value = mock_sess_inst
     
     recognizer = ONNXFaceRecognizer("cosface", "dummy_path.onnx")
-    embedding = recognizer.extract_embedding_with_filters(np.zeros((112, 112, 3)))
+    embedding = recognizer.extract_embedding_with_filters(np.zeros((112, 112, 3), dtype=np.uint8))
     
     assert embedding.shape == (512,)
     assert np.allclose(np.linalg.norm(embedding), 1.0, atol=1e-5)

@@ -33,6 +33,10 @@ class ONNXFaceRecognizer(FaceRecognizer):
             if img_bgr is None or img_bgr.size == 0:
                 return None
                 
+            # Garante tipo uint8 para evitar erros de conversão de cor no OpenCV
+            if img_bgr.dtype != np.uint8:
+                img_bgr = img_bgr.astype(np.uint8)
+                
             # 1. Redimensionamento padrão para iResNet-100 (112x112)
             img_resized = cv2.resize(img_bgr, (112, 112), interpolation=cv2.INTER_CUBIC)
             

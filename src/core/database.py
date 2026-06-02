@@ -1,7 +1,7 @@
 import os
 import cv2
 import chromadb
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 import numpy as np
 from src.core.base import FaceRecognizer
 
