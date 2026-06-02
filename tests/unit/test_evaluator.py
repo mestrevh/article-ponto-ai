@@ -58,3 +58,30 @@ def test_evaluator_calculates_correct_recall_at_k():
     assert evaluator.calculate_recall_at_k("pessoa_2", retrieved_ids, k=2) == 1.0
     # Para Desconhecido deve retornar 0.0
     assert evaluator.calculate_recall_at_k("Desconhecido", retrieved_ids, k=2) == 0.0
+
+def test_evaluator_edge_cases_and_error_handling():
+    """Garante cobertura de 100% testando caminhos de erro e entradas invalidas/vazias."""
+    evaluator = PerformanceEvaluator()
+    
+    # 1. Edge cases para calculate_accuracy
+    assert evaluator.calculate_accuracy([], []) == 0.0
+    assert evaluator.calculate_accuracy(["a"], []) == 0.0
+    assert evaluator.calculate_accuracy([], ["a"]) == 0.0
+    
+    # 2. Edge cases para calculate_tar_at_far
+    assert evaluator.calculate_tar_at_far([], [], 0.01) == 0.0
+    assert evaluator.calculate_tar_at_far([1], [], 0.01) == 0.0
+    assert evaluator.calculate_tar_at_far([1], [0.9], 0.01) == 1.0  # sem impostores
+    assert evaluator.calculate_tar_at_far([0], [0.2], 0.01) == 0.0  # sem genuinos
+    
+    # 3. Edge cases para calculate_auc
+    assert evaluator.calculate_auc([1], [],) == 0.0
+    assert evaluator.calculate_auc([1, 1], [0.9, 0.8]) == 1.0      # classe unica com scores
+    assert evaluator.calculate_auc([0, 0], [0.1, 0.2]) == 0.0      # classe unica impostora
+    assert evaluator.calculate_auc(None, None) == 0.0               # exception fallback
+    
+    # 4. Edge cases para Precision@K e Recall@K
+    assert evaluator.calculate_precision_at_k("pessoa_1", [], 1) == 0.0
+    assert evaluator.calculate_precision_at_k("pessoa_1", ["pessoa_1"], 0) == 0.0
+    assert evaluator.calculate_recall_at_k("pessoa_1", [], 1) == 0.0
+    assert evaluator.calculate_recall_at_k("pessoa_1", ["pessoa_1"], 0) == 0.0
