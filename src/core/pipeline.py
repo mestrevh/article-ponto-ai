@@ -1,6 +1,8 @@
 import cv2
 import gc
 import os
+import json
+import time
 import numpy as np
 from typing import Dict, Any, List, Optional
 from src.core.base import FaceRecognizer
@@ -23,6 +25,14 @@ class ExperimentalPipeline:
         training_dir = os.path.join("data", "training_faces")
         if os.path.exists(training_dir):
             self.db.populate(self.recognizer, training_dir)
+            
+        # Carrega o Ground Truth de alvos (target.json) se existir
+        target_path = os.path.join("data", "target.json")
+        if os.path.exists(target_path):
+            with open(target_path, "r", encoding="utf-8") as f:
+                self.ground_truth = json.load(f)
+        else:
+            self.ground_truth = {}
 
     def run(self, video_path: str) -> Dict[str, Any]:
         """Executa detecção, tracking, extração, busca e votação para o vídeo."""
@@ -37,6 +47,11 @@ class ExperimentalPipeline:
         voting_system = TrackVotingSystem(min_votes=1)
         frames_processed = 0
         frame_logs = []
+        inference_times = []
+        
+        # Mapeamento do Ground Truth específico deste vídeo
+        video_name = os.path.basename(video_path)
+        video_gt = self.ground_truth.get(video_name, {})
         
         while cap.isOpened():
             ret, frame = cap.read()
@@ -72,37 +87,59 @@ class ExperimentalPipeline:
                 preprocessed_face = self.preprocessor.apply(face_crop, (112, 112))
                 
                 # 4. Extrair embedding L2-normalizado
+                t_start = time.perf_counter()
                 embedding = self.recognizer.extract_embedding_with_filters(preprocessed_face)
+                t_end = time.perf_counter()
                 if embedding is None:
                     continue
+                inference_times.append((t_end - t_start) * 1000.0)
                 
-                # 5. Busca no banco vetorial
-                matched_id = self.db.query_embedding(embedding, self.threshold)
+                # 5. Busca dos top-5 vizinhos no banco vetorial
+                results = self.db.query_top_k(embedding, k=5)
+                
+                matched_id = None
+                similarity_score = 0.0
+                retrieved_ids = []
+                
+                if results and results.get("ids") and len(results["ids"][0]) > 0:
+                    retrieved_ids = results["ids"][0]
+                    distances = results["distances"][0]
+                    
+                    # Similaridade cosseno = 1.0 - distancia de cosseno
+                    top_distance = distances[0]
+                    similarity_score = 1.0 - top_distance
+                    
+                    # Aplica threshold de cosseno
+                    if top_distance <= self.threshold:
+                        matched_id = retrieved_ids[0]
+                
                 identity = matched_id if matched_id is not None else "Desconhecido"
                 
                 # 6. Acumular voto
                 voting_system.add_vote(track_id, identity)
                 
-                # Calcular score de similaridade (1.0 - distância)
-                # Para fins de ROC/AUC, precisamos da distância da query
-                try:
-                    results = self.db.collection.query(
-                        query_embeddings=[list(map(float, embedding))],
-                        n_results=1
-                    )
-                    distance = 1.0
-                    if results and results.get("distances") and len(results["distances"][0]) > 0:
-                        distance = results["distances"][0][0]
-                    similarity = 1.0 - distance
-                except Exception:
-                    similarity = 0.0
+                # Determina o Ground Truth correspondente
+                # Como a chave no JSON do target é string (ex: "1"), convertemos o track_id
+                true_id = video_gt.get(str(track_id))
                 
-                frame_logs.append({
-                    "frame": frames_processed,
-                    "track_id": track_id,
-                    "predicted": identity,
-                    "similarity": similarity
-                })
+                # Apenas grava logs frame-a-frame de métricas se houver ground truth mapeado
+                if true_id is not None:
+                    # Rótulo binário para Curva ROC (1 = Match Genuíno, 0 = Impostor)
+                    # Se true_id for 'Desconhecido', qualquer match da base é impostor (rótulo 0).
+                    if true_id == "Desconhecido":
+                        label = 0
+                    else:
+                        label = 1 if (len(retrieved_ids) > 0 and retrieved_ids[0] == true_id) else 0
+                        
+                    frame_logs.append({
+                        "frame": frames_processed,
+                        "track_id": track_id,
+                        "true_id": true_id,
+                        "predicted_id": identity,
+                        "similarity_score": similarity_score,
+                        "label": label,
+                        "retrieved_ids": retrieved_ids
+                    })
                 
         cap.release()
         
@@ -117,6 +154,7 @@ class ExperimentalPipeline:
             "frames_processed": frames_processed,
             "track_winners": track_winners,
             "frame_logs": frame_logs,
+            "avg_inference_time_ms": float(np.mean(inference_times)) if inference_times else 0.0,
             "status": "success"
         }
 

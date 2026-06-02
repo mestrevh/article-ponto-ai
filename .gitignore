@@ -228,3 +228,4 @@ data/models/*
 .agents
 !data/models/README.md
 !data/recordings/README.md
+yolov8n.pt

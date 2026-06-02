@@ -39,3 +39,36 @@ class PerformanceEvaluator:
             
         true_accepts = np.sum(genuine_scores >= threshold)
         return float(true_accepts) / len(genuine_scores)
+
+    def calculate_auc(self, y_true: List[int], y_scores: List[float]) -> float:
+        """Calcula a Área sob a Curva ROC (AUC)."""
+        if not y_true or not y_scores or len(y_true) != len(y_scores):
+            return 0.0
+        try:
+            from sklearn.metrics import roc_curve, auc
+            # Se todas as amostras forem da mesma classe, a AUC não é bem definida.
+            if len(set(y_true)) < 2:
+                return 1.0 if (1 in y_true and all(y_scores)) else 0.0
+            fpr, tpr, _ = roc_curve(y_true, y_scores)
+            return float(auc(fpr, tpr))
+        except Exception:
+            return 0.0
+
+    def calculate_precision_at_k(self, true_id: str, retrieved_ids: List[str], k: int) -> float:
+        """Calcula a precisão dos K vizinhos mais próximos recuperados."""
+        if not retrieved_ids or k <= 0:
+            return 0.0
+        if true_id == "Desconhecido":
+            return 0.0
+        top_k = retrieved_ids[:k]
+        matches = sum(1 for rid in top_k if rid == true_id)
+        return float(matches) / k
+
+    def calculate_recall_at_k(self, true_id: str, retrieved_ids: List[str], k: int) -> float:
+        """Calcula o recall dos K vizinhos mais próximos recuperados (1.0 ou 0.0)."""
+        if not retrieved_ids or k <= 0:
+            return 0.0
+        if true_id == "Desconhecido":
+            return 0.0
+        top_k = retrieved_ids[:k]
+        return 1.0 if true_id in top_k else 0.0

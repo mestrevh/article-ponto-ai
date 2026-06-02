@@ -64,6 +64,17 @@ class VectorDatabase:
                 return results["ids"][0][0]
         return None
 
+    def query_top_k(self, embedding: List[float], k: int = 5) -> Dict[str, Any]:
+        """Realiza busca vetorial retornando os top K resultados com IDs e distâncias."""
+        try:
+            results = self.collection.query(
+                query_embeddings=[list(map(float, embedding))],
+                n_results=k
+            )
+            return results
+        except Exception:
+            return {}
+
     def cleanup(self) -> None:
         """Limpa conexões e remove coleções para evitar vazamento de memória."""
         try:
