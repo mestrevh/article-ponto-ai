@@ -18,6 +18,7 @@ def test_detector_returns_empty_when_no_detections(mock_deepsort, mock_yolo):
 @patch("src.core.detector.DeepSort")
 def test_detector_returns_tracks_with_ids(mock_deepsort, mock_yolo):
     """Garante que detecções válidas são mapeadas em objetos de rastreamento com ID."""
+    mock_yolo.return_value.predict.return_value = [MagicMock()]
     mock_deepsort.return_value.update.return_value = [
         [100, 100, 200, 200, 1]
     ]
