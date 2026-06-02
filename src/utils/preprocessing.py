@@ -8,6 +8,10 @@ class ImagePreprocessor:
         if img_bgr is None or img_bgr.size == 0:
             return np.zeros((*target_size, 3), dtype=np.uint8)
             
+        # Garante tipo uint8 para evitar erros de conversão de cor no OpenCV
+        if img_bgr.dtype != np.uint8:
+            img_bgr = img_bgr.astype(np.uint8)
+            
         # Converte para LAB para aplicar CLAHE no canal de luminância L
         lab = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2LAB)
         l, a, b = cv2.split(lab)
