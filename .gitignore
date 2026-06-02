@@ -223,9 +223,10 @@ __pycache__
 chroma_db
 data/results
 data/recordings/*
-data/training_faces
+data/training_faces/*
 data/models/*
 .agents
+!data/training_faces/README.md
 !data/models/README.md
 !data/recordings/README.md
 yolov8n.pt
