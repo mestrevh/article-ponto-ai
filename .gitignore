@@ -216,3 +216,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+#project
+__pycache__
+.venv
+chroma_db
+data/results
+data/recordings/*
+data/training_faces
+data/models/*
+.agents
+!data/models/README.md
+!data/recordings/README.md

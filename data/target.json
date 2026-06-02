@@ -1,0 +1,56 @@
+{
+    "camera-externa-video-dupla.mp4": {
+        "1": "pessoa_1",
+        "7": "pessoa_2",
+        "9": "pessoa_1"
+    },
+    "camera-externa-video-grupo.mp4": {
+        "1": "Desconhecido",
+        "2": "Desconhecido",
+        "3": "pessoa_1",
+        "4": "Desconhecido",
+        "9": "pessoa_2",
+        "10": "Desconhecido",
+        "11": "pessoa_2",
+        "12": "Desconhecido",
+        "13": "pessoa_2",
+        "15": "pessoa_1",
+        "18": "pessoa_3",
+        "19": "pessoa_3",
+        "20": "Desconhecido",
+        "24": "pessoa_2",
+        "25": "pessoa_4",
+        "26": "Desconhecido",
+        "27": "pessoa_4",
+        "28": "Desconhecido",
+        "29": "Desconhecido",
+        "31": "pessoa_1",
+        "32": "Desconhecido",
+        "33": "pessoa_1"
+    },
+    "camera-externa-video-sozinho.mp4": {
+        "3": "pessoa_2"
+    },
+    "camera-interna-video-dupla.mp4": {
+        "2": "pessoa_1",
+        "3": "pessoa_2"
+    },
+    "camera-interna-video-grupo.mp4": {
+        "2": "Desconhecido",
+        "3": "pessoa_1",
+        "4": "Desconhecido",
+        "6": "pessoa_1",
+        "10": "pessoa_2",
+        "11": "pessoa_3",
+        "13": "pessoa_1",
+        "14": "pessoa_4",
+        "18": "pessoa_3",
+        "21": "pessoa_4",
+        "22": "pessoa_1",
+        "23": "pessoa_1"
+    },
+    "camera-interna-video-sozinho.mp4": {
+        "1": "pessoa_2",
+        "2": "pessoa_2"
+    }
+}
