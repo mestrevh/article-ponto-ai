@@ -6,13 +6,20 @@ import numpy as np
 from src.core.base import FaceRecognizer
 
 class VectorDatabase:
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str, persist_directory: str = "data/chroma_db"):
         self.model_name = model_name
-        self.client = chromadb.Client()
+        self.persist_directory = persist_directory
+        os.makedirs(self.persist_directory, exist_ok=True)
+        self.client = chromadb.PersistentClient(path=self.persist_directory)
         self.collection = self.client.get_or_create_collection(name=model_name)
 
     def populate(self, recognizer: FaceRecognizer, faces_dir: str) -> None:
         """Lê imagens do diretório, extrai embeddings e adiciona na coleção."""
+        # Se a coleção já possui embeddings deste modelo, pulamos a extração para otimizar
+        if self.collection.count() > 0:
+            print(f"  [ChromaDB] Coleção '{self.model_name}' já populada ({self.collection.count()} embeddings). Pulando extração.")
+            return
+
         files_to_process = []
         
         # Se o diretório não existir (caso comum em testes unitários com caminhos mockados)
@@ -76,8 +83,5 @@ class VectorDatabase:
             return {}
 
     def cleanup(self) -> None:
-        """Limpa conexões e remove coleções para evitar vazamento de memória."""
-        try:
-            self.client.delete_collection(name=self.model_name)
-        except Exception:
-            pass
+        """Limpa conexões para evitar vazamento de memória. (Agora persistente, não deleta a coleção)"""
+        pass
