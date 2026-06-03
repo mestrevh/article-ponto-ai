@@ -3,6 +3,7 @@ import gc
 import csv
 import cv2
 import pickle
+import json
 from tqdm import tqdm
 import numpy as np
 from src.core.pipeline import ExperimentalPipeline
@@ -85,11 +86,23 @@ def extract_detections_from_videos(recordings_dir):
                 track_id = track["track_id"]
                 bbox = track["bbox"]  # (xmin, ymin, xmax, ymax)
                 
+                # Aumentando a escala do bbox (fator 1.5x) para englobar melhor o rosto todo
+                scale = 2
+                x1, y1, x2, y2 = bbox
+                w_bbox = x2 - x1
+                h_bbox = y2 - y1
+                
+                cx = x1 + w_bbox / 2
+                cy = y1 + h_bbox / 2
+                
+                w_new = w_bbox * scale
+                h_new = h_bbox * scale
+                
                 h_img, w_img = frame.shape[:2]
-                xmin = max(0, int(bbox[0]))
-                ymin = max(0, int(bbox[1]))
-                xmax = min(w_img, int(bbox[2]))
-                ymax = min(h_img, int(bbox[3]))
+                xmin = max(0, int(cx - w_new / 2))
+                ymin = max(0, int(cy - h_new / 2))
+                xmax = min(w_img, int(cx + w_new / 2))
+                ymax = min(h_img, int(cy + h_new / 2))
                 
                 if xmax <= xmin or ymax <= ymin:
                     continue
@@ -125,6 +138,64 @@ def extract_detections_from_videos(recordings_dir):
     
     return all_video_detections
 
+def build_or_update_target_json(all_video_detections, target_path):
+    resp = input("\n[?] Deseja revisar/criar o mapeamento manual (target.json) agora? (s/N): ").strip().lower()
+    if resp != 's':
+        return
+        
+    if os.path.exists(target_path):
+        with open(target_path, "r", encoding="utf-8") as f:
+            target_data = json.load(f)
+    else:
+        target_data = {}
+        
+    for video, detections in all_video_detections.items():
+        if video not in target_data:
+            target_data[video] = {}
+            
+        tracks = {}
+        for det in detections:
+            track_id = det["track_id"]
+            if track_id not in tracks:
+                tracks[track_id] = []
+            tracks[track_id].append(det["face_crop"])
+            
+        for track_id, crops in tracks.items():
+            str_track_id = str(track_id)
+                
+            mid_idx = len(crops) // 2
+            sample_face = crops[mid_idx]
+            
+            display_face = cv2.resize(sample_face, (256, 256))
+            window_name = f"Video: {video} | Track: {track_id}"
+            
+            cv2.imshow(window_name, display_face)
+            cv2.waitKey(1)
+            
+            print(f"\nVisualizando track {track_id} do vídeo {video}...")
+            print("Verifique a janela pop-up da imagem, e digite o nome aqui no terminal.")
+            
+            current_label = target_data[video].get(str_track_id)
+            if current_label:
+                prompt_text = f"Quem é esta pessoa? (Atual: '{current_label}' - deixe em branco para manter): "
+            else:
+                prompt_text = "Quem é esta pessoa? (ex: 'pessoa_1', 'Desconhecido', ou deixe em branco para pular): "
+                
+            label = input(prompt_text).strip()
+            
+            try:
+                cv2.destroyWindow(window_name)
+                cv2.waitKey(1)
+            except Exception:
+                pass
+            
+            if label:
+                target_data[video][str_track_id] = label
+                
+    with open(target_path, "w", encoding="utf-8") as f:
+        json.dump(target_data, f, indent=4, ensure_ascii=False)
+    print("\n[OK] target.json atualizado com sucesso!")
+
 
 def main():
     print("=== INICIANDO PIPELINE EXPERIMENTAL ERBASE 2026 ===")
@@ -142,6 +213,9 @@ def main():
     if not all_video_detections:
         print("  [AVISO] Nenhuma detecção extraída. Encerrando pipeline.")
         return
+        
+    target_path = os.path.join(root_dir, "data", "target.json")
+    build_or_update_target_json(all_video_detections, target_path)
         
     evaluator = PerformanceEvaluator()
     
