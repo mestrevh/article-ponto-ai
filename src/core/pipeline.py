@@ -43,19 +43,27 @@ class ExperimentalPipeline:
         # Mapeamento do Ground Truth específico deste vídeo
         video_gt = self.ground_truth.get(video_name, {})
         
-        pbar = tqdm(
-            total=len(detections),
-            desc=f"  -> Inferindo {video_name}",
-            unit="face",
-            leave=False
-        )
-        
         frames_processed = len(detections) # Número de recortes avaliados
         
+        # Agrupar recortes por track_id para visualização progressiva
+        tracks_data = {}
         for det in detections:
             track_id = det["track_id"]
-            face_crop = det["face_crop"]
-            frame_idx = det["frame_idx"]
+            if track_id not in tracks_data:
+                tracks_data[track_id] = []
+            tracks_data[track_id].append(det)
+            
+        for track_id, track_dets in tracks_data.items():
+            pbar = tqdm(
+                total=len(track_dets),
+                desc=f"  -> Inferindo {video_name} [Track {track_id}]",
+                unit="face",
+                leave=False
+            )
+            
+            for det in track_dets:
+                face_crop = det["face_crop"]
+                frame_idx = det["frame_idx"]
             
             # 3. Pré-processamento (Upscale + CLAHE)
             preprocessed_face = self.preprocessor.apply(face_crop, (112, 112))
@@ -114,7 +122,7 @@ class ExperimentalPipeline:
                 })
             pbar.update(1)
             
-        pbar.close()
+            pbar.close()
         
         # Consolidação de vencedores por track
         track_winners = {}

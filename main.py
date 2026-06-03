@@ -2,6 +2,7 @@ import os
 import gc
 import csv
 import cv2
+import pickle
 from tqdm import tqdm
 import numpy as np
 from src.core.pipeline import ExperimentalPipeline
@@ -20,7 +21,7 @@ MODELOS = [
 ]
 
 def extract_detections_from_videos(recordings_dir):
-    """Extrai todas as faces e as mantém em memória (dicionário por vídeo)."""
+    """Extrai todas as faces e as carrega/salva do cache em disco para evitar reprocessamento."""
     if not os.path.exists(recordings_dir):
         os.makedirs(recordings_dir, exist_ok=True)
     
@@ -29,11 +30,32 @@ def extract_detections_from_videos(recordings_dir):
         print("  [AVISO] Nenhum vídeo .mp4 encontrado em data/recordings.")
         return {}
         
+    cache_dir = os.path.join(os.path.dirname(recordings_dir), "cache")
+    os.makedirs(cache_dir, exist_ok=True)
+        
     print("\n=== PRÉ-PROCESSAMENTO: Detecção e Rastreamento (YOLO + DeepSort) ===")
-    detector = FaceDetectorTracker()
+    
     all_video_detections = {}
+    detector = None
     
     for video in videos:
+        cache_path = os.path.join(cache_dir, f"{video}_detections.pkl")
+        
+        if os.path.exists(cache_path):
+            print(f"  -> Carregando detecções do cache em disco para {video}...")
+            try:
+                with open(cache_path, "rb") as f:
+                    detections = pickle.load(f)
+                all_video_detections[video] = detections
+                print(f"     Carregados {len(detections)} recortes faciais válidos de {video} do cache.")
+                continue
+            except Exception as e:
+                print(f"  [AVISO] Falha ao carregar cache de {video}: {e}. Reprocessando...")
+        
+        if detector is None:
+            # Inicializa sob demanda
+            detector = FaceDetectorTracker()
+            
         video_path = os.path.join(recordings_dir, video)
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
@@ -90,9 +112,16 @@ def extract_detections_from_videos(recordings_dir):
         all_video_detections[video] = detections
         print(f"     Extraídos {len(detections)} recortes faciais válidos de {video}.")
         
+        try:
+            with open(cache_path, "wb") as f:
+                pickle.dump(detections, f)
+        except Exception as e:
+            print(f"  [AVISO] Nao foi possivel salvar cache de {video}: {e}")
+        
     # Limpa detector da RAM/VRAM para que os modelos tenham memória de sobra
-    del detector
-    gc.collect()
+    if detector is not None:
+        del detector
+        gc.collect()
     
     return all_video_detections
 
