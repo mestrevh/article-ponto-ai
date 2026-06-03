@@ -23,7 +23,7 @@ class FaceNetWrapper(FaceRecognizer):
         """Extrai o vetor de características da face usando o DeepFace FaceNet e normaliza L2."""
         try:
             # Em testes reais, o DeepFace irá requerer o modelo. No TDD, mockamos represent.
-            res = DeepFace.represent(img_path=img_bgr, model_name="FaceNet", enforce_detection=False)
+            res = DeepFace.represent(img_path=img_bgr, model_name="FaceNet", enforce_detection=False, detector_backend="skip")
             if res and len(res) > 0 and "embedding" in res[0]:
                 vector = np.array(res[0]["embedding"], dtype=np.float32)
                 # Normalização L2
@@ -55,7 +55,7 @@ class ArcFaceWrapper(FaceRecognizer):
     def extract_embedding_with_filters(self, img_bgr: np.ndarray) -> Optional[np.ndarray]:
         """Extrai o vetor de características da face usando o DeepFace ArcFace e normaliza L2."""
         try:
-            res = DeepFace.represent(img_path=img_bgr, model_name="ArcFace", enforce_detection=False)
+            res = DeepFace.represent(img_path=img_bgr, model_name="ArcFace", enforce_detection=False, detector_backend="skip")
             if res and len(res) > 0 and "embedding" in res[0]:
                 vector = np.array(res[0]["embedding"], dtype=np.float32)
                 norm = np.linalg.norm(vector)
