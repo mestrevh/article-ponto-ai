@@ -225,6 +225,7 @@ data/results
 data/recordings/*
 data/training_faces/*
 data/models/*
+data/cache/*
 .agents
 !data/training_faces/README.md
 !data/models/README.md
