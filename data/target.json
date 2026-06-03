@@ -2,7 +2,8 @@
     "camera-externa-video-dupla.mp4": {
         "1": "pessoa_1",
         "7": "pessoa_2",
-        "9": "pessoa_1"
+        "9": "pessoa_1",
+        "2": "pessoa_2"
     },
     "camera-externa-video-grupo.mp4": {
         "1": "Desconhecido",
@@ -10,30 +11,47 @@
         "3": "pessoa_1",
         "4": "Desconhecido",
         "9": "pessoa_2",
-        "10": "Desconhecido",
-        "11": "pessoa_2",
+        "10": "pessoa_2",
+        "11": "Desconhecido",
         "12": "Desconhecido",
         "13": "pessoa_2",
-        "15": "pessoa_1",
+        "15": "pessoa_3",
         "18": "pessoa_3",
         "19": "pessoa_3",
         "20": "Desconhecido",
-        "24": "pessoa_2",
+        "24": "Desconhecido",
         "25": "pessoa_4",
         "26": "Desconhecido",
-        "27": "pessoa_4",
+        "27": "Desconhecido",
         "28": "Desconhecido",
-        "29": "Desconhecido",
+        "29": "pessoa_1",
         "31": "pessoa_1",
         "32": "Desconhecido",
-        "33": "pessoa_1"
+        "33": "pessoa_1",
+        "7": "Desconhecido",
+        "8": "pessoa_1",
+        "14": "pessoa_2",
+        "16": "pessoa_3",
+        "17": "Desconhecido",
+        "21": "pessoa_1",
+        "22": "pessoa_4",
+        "42": "pessoa_2"
     },
     "camera-externa-video-sozinho.mp4": {
-        "3": "pessoa_2"
+        "3": "pessoa_2",
+        "11": "Desconhecido",
+        "22": "Desconhecido",
+        "24": "Desconhecido",
+        "29": "Desconhecido",
+        "42": "Desconhecido",
+        "43": "pessoa_2"
     },
     "camera-interna-video-dupla.mp4": {
         "2": "pessoa_1",
-        "3": "pessoa_2"
+        "3": "pessoa_2",
+        "43": "Desconhecido",
+        "44": "pessoa_1",
+        "45": "pessoa_2"
     },
     "camera-interna-video-grupo.mp4": {
         "2": "Desconhecido",
@@ -47,10 +65,29 @@
         "18": "pessoa_3",
         "21": "pessoa_4",
         "22": "pessoa_1",
-        "23": "pessoa_1"
+        "23": "pessoa_1",
+        "50": "Desconhecido",
+        "51": "pessoa_1",
+        "53": "Desconhecido",
+        "56": "pessoa_1",
+        "57": "pessoa_4",
+        "59": "pessoa_2",
+        "61": "pessoa_4",
+        "62": "pessoa_3",
+        "64": "Desconhecido",
+        "76": "Desconhecido",
+        "77": "pessoa_4",
+        "78": "pessoa_1",
+        "81": "pessoa_2",
+        "82": "pessoa_2"
     },
     "camera-interna-video-sozinho.mp4": {
         "1": "pessoa_2",
         "2": "pessoa_2"
+    },
+    "camera-interna-video-sozinho copy.mp4": {
+        "62": "Desconhecido",
+        "77": "Desconhecido",
+        "88": "pessoa_2"
     }
 }
