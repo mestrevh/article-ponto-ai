@@ -188,10 +188,12 @@ def main():
                     
                     video_gt = pipeline.ground_truth.get(video, {})
                     track_winners = results["track_winners"]
+                    track_votes = results.get("track_votes", {})
                     
                     track_results = []
                     for track_id, predicted in track_winners.items():
                         ground_truth = video_gt.get(str(track_id))
+                        votes = track_votes.get(track_id, {})
                         if ground_truth is not None:
                             is_correct = (predicted == ground_truth)
                             track_results.append({
@@ -199,6 +201,7 @@ def main():
                                 "track_id": track_id,
                                 "ground_truth": ground_truth,
                                 "predicted": predicted,
+                                "votes": str(votes),
                                 "correct": is_correct
                             })
                             
@@ -242,13 +245,14 @@ def main():
                     model_csv_path = os.path.join(video_result_dir, f"{model_name}.csv")
                     with open(model_csv_path, mode="w", newline="", encoding="utf-8") as f:
                         writer = csv.writer(f)
-                        writer.writerow(["video", "track_id", "ground_truth", "predicted", "correct"])
+                        writer.writerow(["video", "track_id", "ground_truth", "predicted", "votes", "correct"])
                         for row in track_results:
                             writer.writerow([
                                 row["video"], 
                                 row["track_id"], 
                                 row["ground_truth"], 
                                 row["predicted"], 
+                                row["votes"],
                                 str(row["correct"])
                             ])
                     print(f"     -> Salvo resultados de tracks em: {model_csv_path}")

@@ -17,13 +17,13 @@ class FaceNetWrapper(FaceRecognizer):
 
     @property
     def dimension(self) -> int:
-        return 512
+        return 128
 
     def extract_embedding_with_filters(self, img_bgr: np.ndarray) -> Optional[np.ndarray]:
         """Extrai o vetor de características da face usando o DeepFace FaceNet e normaliza L2."""
         try:
             # Em testes reais, o DeepFace irá requerer o modelo. No TDD, mockamos represent.
-            res = DeepFace.represent(img_path=img_bgr, model_name="FaceNet", enforce_detection=False, detector_backend="skip")
+            res = DeepFace.represent(img_path=img_bgr, model_name="Facenet", enforce_detection=False, detector_backend="skip")
             if res and len(res) > 0 and "embedding" in res[0]:
                 vector = np.array(res[0]["embedding"], dtype=np.float32)
                 # Normalização L2
