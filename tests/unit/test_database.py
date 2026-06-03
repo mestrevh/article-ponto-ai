@@ -3,7 +3,7 @@ import numpy as np
 from unittest.mock import MagicMock, patch
 from src.core.database import VectorDatabase
 
-@patch("src.core.database.chromadb.Client")
+@patch("src.core.database.chromadb.PersistentClient")
 def test_database_initialization_creates_isolated_collection(mock_client):
     """Garante que a inicialização do DB cria uma coleção única por modelo."""
     mock_collection = MagicMock()
@@ -18,6 +18,7 @@ def test_database_populate_inserts_embeddings():
     """Verifica se o método populate insere corretamente embeddings no banco vetorial."""
     db = VectorDatabase(model_name="facenet")
     db.collection = MagicMock()
+    db.collection.count.return_value = 0
     
     mock_recognizer = MagicMock()
     mock_recognizer.extract_embedding_with_filters.return_value = [0.1] * 512

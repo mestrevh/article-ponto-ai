@@ -19,7 +19,6 @@ class ExperimentalPipeline:
         self.threshold = threshold
         self.recognizer = ModelFactory.create(model_name)
         self.db = VectorDatabase(model_name)
-        self.detector = FaceDetectorTracker()
         self.preprocessor = ImagePreprocessor()
         
         # Popular o banco vetorial se o diretório de treinamento existir
@@ -35,124 +34,87 @@ class ExperimentalPipeline:
         else:
             self.ground_truth = {}
 
-    def run(self, video_path: str) -> Dict[str, Any]:
-        """Executa detecção, tracking, extração, busca e votação para o vídeo."""
-        cap = cv2.VideoCapture(video_path)
-        if not cap.isOpened():
-            return {
-                "model": self.model_name,
-                "status": "failed",
-                "reason": f"Could not open video file: {video_path}"
-            }
-            
+    def run(self, video_name: str, detections: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Executa extração, busca e votação baseada em recortes faciais pré-computados."""
         voting_system = TrackVotingSystem(min_votes=1)
-        frames_processed = 0
         frame_logs = []
         inference_times = []
         
         # Mapeamento do Ground Truth específico deste vídeo
-        video_name = os.path.basename(video_path)
         video_gt = self.ground_truth.get(video_name, {})
         
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         pbar = tqdm(
-            total=total_frames if total_frames > 0 else None,
-            desc=f"  -> Processando {video_name}",
-            unit="f",
+            total=len(detections),
+            desc=f"  -> Inferindo {video_name}",
+            unit="face",
             leave=False
         )
         
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
+        frames_processed = len(detections) # Número de recortes avaliados
+        
+        for det in detections:
+            track_id = det["track_id"]
+            face_crop = det["face_crop"]
+            frame_idx = det["frame_idx"]
             
-            frames_processed += 1
+            # 3. Pré-processamento (Upscale + CLAHE)
+            preprocessed_face = self.preprocessor.apply(face_crop, (112, 112))
             
-            # 1. Detecção e Tracking
-            tracks = self.detector.process_frame(frame)
+            # 4. Extrair embedding L2-normalizado
+            t_start = time.perf_counter()
+            embedding = self.recognizer.extract_embedding_with_filters(preprocessed_face)
+            t_end = time.perf_counter()
+            if embedding is None:
+                pbar.update(1)
+                continue
+            inference_times.append((t_end - t_start) * 1000.0)
             
-            # 2. Para cada rastro (track) ativo
-            for track in tracks:
-                track_id = track["track_id"]
-                bbox = track["bbox"]  # (xmin, ymin, xmax, ymax)
+            # 5. Busca dos top-5 vizinhos no banco vetorial
+            results = self.db.query_top_k(embedding, k=5)
+            
+            matched_id = None
+            similarity_score = 0.0
+            retrieved_ids = []
+            
+            if results and results.get("ids") and len(results["ids"][0]) > 0:
+                retrieved_ids = results["ids"][0]
+                distances = results["distances"][0]
                 
-                # Garante os limites da imagem
-                h_img, w_img = frame.shape[:2]
-                xmin = max(0, int(bbox[0]))
-                ymin = max(0, int(bbox[1]))
-                xmax = min(w_img, int(bbox[2]))
-                ymax = min(h_img, int(bbox[3]))
+                # Similaridade cosseno = 1.0 - distancia de cosseno
+                top_distance = distances[0]
+                similarity_score = 1.0 - top_distance
                 
-                if xmax <= xmin or ymax <= ymin:
-                    continue
-                
-                # Extrai o recorte do rosto
-                face_crop = frame[ymin:ymax, xmin:xmax]
-                if face_crop.size == 0:
-                    continue
+                # Aplica threshold de cosseno
+                if top_distance <= self.threshold:
+                    matched_id = retrieved_ids[0]
+            
+            identity = matched_id if matched_id is not None else "Desconhecido"
+            
+            # 6. Acumular voto
+            voting_system.add_vote(track_id, identity)
+            
+            # Determina o Ground Truth correspondente
+            true_id = video_gt.get(str(track_id))
+            
+            # Apenas grava logs frame-a-frame de métricas se houver ground truth mapeado
+            if true_id is not None:
+                if true_id == "Desconhecido":
+                    label = 0
+                else:
+                    label = 1 if (len(retrieved_ids) > 0 and retrieved_ids[0] == true_id) else 0
                     
-                # 3. Pré-processamento (Upscale + CLAHE)
-                preprocessed_face = self.preprocessor.apply(face_crop, (112, 112))
-                
-                # 4. Extrair embedding L2-normalizado
-                t_start = time.perf_counter()
-                embedding = self.recognizer.extract_embedding_with_filters(preprocessed_face)
-                t_end = time.perf_counter()
-                if embedding is None:
-                    continue
-                inference_times.append((t_end - t_start) * 1000.0)
-                
-                # 5. Busca dos top-5 vizinhos no banco vetorial
-                results = self.db.query_top_k(embedding, k=5)
-                
-                matched_id = None
-                similarity_score = 0.0
-                retrieved_ids = []
-                
-                if results and results.get("ids") and len(results["ids"][0]) > 0:
-                    retrieved_ids = results["ids"][0]
-                    distances = results["distances"][0]
-                    
-                    # Similaridade cosseno = 1.0 - distancia de cosseno
-                    top_distance = distances[0]
-                    similarity_score = 1.0 - top_distance
-                    
-                    # Aplica threshold de cosseno
-                    if top_distance <= self.threshold:
-                        matched_id = retrieved_ids[0]
-                
-                identity = matched_id if matched_id is not None else "Desconhecido"
-                
-                # 6. Acumular voto
-                voting_system.add_vote(track_id, identity)
-                
-                # Determina o Ground Truth correspondente
-                # Como a chave no JSON do target é string (ex: "1"), convertemos o track_id
-                true_id = video_gt.get(str(track_id))
-                
-                # Apenas grava logs frame-a-frame de métricas se houver ground truth mapeado
-                if true_id is not None:
-                    # Rótulo binário para Curva ROC (1 = Match Genuíno, 0 = Impostor)
-                    # Se true_id for 'Desconhecido', qualquer match da base é impostor (rótulo 0).
-                    if true_id == "Desconhecido":
-                        label = 0
-                    else:
-                        label = 1 if (len(retrieved_ids) > 0 and retrieved_ids[0] == true_id) else 0
-                        
-                    frame_logs.append({
-                        "frame": frames_processed,
-                        "track_id": track_id,
-                        "true_id": true_id,
-                        "predicted_id": identity,
-                        "similarity_score": similarity_score,
-                        "label": label,
-                        "retrieved_ids": retrieved_ids
-                    })
+                frame_logs.append({
+                    "frame": frame_idx,
+                    "track_id": track_id,
+                    "true_id": true_id,
+                    "predicted_id": identity,
+                    "similarity_score": similarity_score,
+                    "label": label,
+                    "retrieved_ids": retrieved_ids
+                })
             pbar.update(1)
             
         pbar.close()
-        cap.release()
         
         # Consolidação de vencedores por track
         track_winners = {}
@@ -176,6 +138,4 @@ class ExperimentalPipeline:
         # Deletar referências para forçar coleta de lixo
         if hasattr(self, 'recognizer'):
             del self.recognizer
-        if hasattr(self, 'detector'):
-            del self.detector
         gc.collect()

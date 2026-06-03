@@ -1,10 +1,13 @@
 import os
 import gc
 import csv
+import cv2
+from tqdm import tqdm
 import numpy as np
 from src.core.pipeline import ExperimentalPipeline
 from src.metrics.evaluator import PerformanceEvaluator
 from src.utils.model_downloader import ensure_all_onnx_models
+from src.core.detector import FaceDetectorTracker
 
 MODELOS = [
     "facenet", 
@@ -16,82 +19,150 @@ MODELOS = [
     "elasticface"
 ]
 
-VIDEOS = [
-    "camera-externa-video-sozinho.mp4",
-    "camera-externa-video-dupla.mp4",
-    "camera-externa-video-grupo.mp4",
-    "camera-interna-video-sozinho.mp4",
-    "camera-interna-video-dupla.mp4",
-    "camera-interna-video-grupo.mp4"
-]
+def extract_detections_from_videos(recordings_dir):
+    """Extrai todas as faces e as mantém em memória (dicionário por vídeo)."""
+    if not os.path.exists(recordings_dir):
+        os.makedirs(recordings_dir, exist_ok=True)
+    
+    videos = [f for f in os.listdir(recordings_dir) if f.endswith(".mp4")]
+    if not videos:
+        print("  [AVISO] Nenhum vídeo .mp4 encontrado em data/recordings.")
+        return {}
+        
+    print("\n=== PRÉ-PROCESSAMENTO: Detecção e Rastreamento (YOLO + DeepSort) ===")
+    detector = FaceDetectorTracker()
+    all_video_detections = {}
+    
+    for video in videos:
+        video_path = os.path.join(recordings_dir, video)
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            print(f"  [AVISO] Falha ao abrir: {video}")
+            continue
+            
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        pbar = tqdm(
+            total=total_frames if total_frames > 0 else None,
+            desc=f"  -> Detectando rostos em {video}",
+            unit="f",
+            leave=False
+        )
+        
+        detections = []
+        frame_idx = 0
+        
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            frame_idx += 1
+            tracks = detector.process_frame(frame)
+            
+            for track in tracks:
+                track_id = track["track_id"]
+                bbox = track["bbox"]  # (xmin, ymin, xmax, ymax)
+                
+                h_img, w_img = frame.shape[:2]
+                xmin = max(0, int(bbox[0]))
+                ymin = max(0, int(bbox[1]))
+                xmax = min(w_img, int(bbox[2]))
+                ymax = min(h_img, int(bbox[3]))
+                
+                if xmax <= xmin or ymax <= ymin:
+                    continue
+                
+                face_crop = frame[ymin:ymax, xmin:xmax]
+                if face_crop.size == 0:
+                    continue
+                    
+                detections.append({
+                    "frame_idx": frame_idx,
+                    "track_id": track_id,
+                    "face_crop": face_crop.copy() # Importante copiar para que o frame original seja liberado
+                })
+            
+            pbar.update(1)
+            
+        pbar.close()
+        cap.release()
+        
+        all_video_detections[video] = detections
+        print(f"     Extraídos {len(detections)} recortes faciais válidos de {video}.")
+        
+    # Limpa detector da RAM/VRAM para que os modelos tenham memória de sobra
+    del detector
+    gc.collect()
+    
+    return all_video_detections
+
 
 def main():
     print("=== INICIANDO PIPELINE EXPERIMENTAL ERBASE 2026 ===")
     
-    # Caminho do diretório de vídeos e resultados
     root_dir = os.path.dirname(os.path.abspath(__file__))
     recordings_dir = os.path.join(root_dir, "data", "recordings")
     results_dir = os.path.join(root_dir, "data", "results")
     os.makedirs(results_dir, exist_ok=True)
-
-    # Garante que todos os modelos ONNX necessários estejam presentes,
-    # realizando download automático dos que estiverem faltando.
+    
     models_dir = os.path.join(root_dir, "data", "models")
     ensure_all_onnx_models(models_dir)
     
+    # Etapa 1: Pré-processamento
+    all_video_detections = extract_detections_from_videos(recordings_dir)
+    if not all_video_detections:
+        print("  [AVISO] Nenhuma detecção extraída. Encerrando pipeline.")
+        return
+        
     evaluator = PerformanceEvaluator()
-    summary_csv_path = os.path.join(results_dir, "data.csv")
     
-    # Prepara o arquivo de resumo comparativo global (data.csv)
-    # Se o arquivo já existir, remove para recriar limpo
-    if os.path.exists(summary_csv_path):
-        try:
-            os.remove(summary_csv_path)
-        except Exception:
-            pass
+    # Prepara o arquivo summary data.csv por vídeo
+    for video in all_video_detections.keys():
+        video_result_dir = os.path.join(results_dir, video)
+        os.makedirs(video_result_dir, exist_ok=True)
+        
+        summary_csv_path = os.path.join(video_result_dir, "data.csv")
+        if os.path.exists(summary_csv_path):
+            try:
+                os.remove(summary_csv_path)
+            except Exception:
+                pass
+                
+        with open(summary_csv_path, mode="w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                "model", 
+                "accuracy", 
+                "auc", 
+                "tar_at_far_1%", 
+                "recall_at_1", 
+                "recall_at_3", 
+                "precision_at_1", 
+                "precision_at_3", 
+                "avg_inference_time_ms"
+            ])
             
-    with open(summary_csv_path, mode="w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            "model", 
-            "accuracy", 
-            "auc", 
-            "tar_at_far_1%", 
-            "recall_at_1", 
-            "recall_at_3", 
-            "precision_at_1", 
-            "precision_at_3", 
-            "avg_inference_time_ms"
-        ])
-    
+    # Etapa 2: Avaliação de cada modelo
     for model_name in MODELOS:
         print(f"\n>>> Executando avaliações para o modelo: {model_name.upper()} <<<")
         try:
-            # Inicializa o pipeline
+            # Inicializa o pipeline e o DB
             pipeline = ExperimentalPipeline(model_name=model_name, threshold=0.5)
             
-            track_results = []
-            all_frame_logs = []
-            video_inference_times = []
-            
-            for video in VIDEOS:
-                video_path = os.path.join(recordings_dir, video)
-                if not os.path.exists(video_path):
-                    print(f"  [AVISO] Vídeo não encontrado: {video_path}")
-                    continue
-                    
+            for video, detections in all_video_detections.items():
                 print(f"  -> Processando vídeo: {video}")
-                results = pipeline.run(video_path=video_path)
+                
+                results = pipeline.run(video_name=video, detections=detections)
                 
                 if results["status"] == "success":
-                    print(f"     Status: Sucesso | Frames: {results['frames_processed']}")
+                    print(f"     Status: Sucesso | Frames avaliados: {results['frames_processed']}")
                     
-                    # 1. Acumula resultados de rastreamento (track_winners)
                     video_gt = pipeline.ground_truth.get(video, {})
                     track_winners = results["track_winners"]
+                    
+                    track_results = []
                     for track_id, predicted in track_winners.items():
                         ground_truth = video_gt.get(str(track_id))
-                        # Apenas avalia se o track possuir ground truth em target.json
                         if ground_truth is not None:
                             is_correct = (predicted == ground_truth)
                             track_results.append({
@@ -101,89 +172,77 @@ def main():
                                 "predicted": predicted,
                                 "correct": is_correct
                             })
+                            
+                    # Métricas do vídeo para este modelo
+                    if track_results:
+                        y_true_tracks = [t["ground_truth"] for t in track_results]
+                        y_pred_tracks = [t["predicted"] for t in track_results]
+                        accuracy = evaluator.calculate_accuracy(y_true_tracks, y_pred_tracks)
+                    else:
+                        accuracy = 0.0
+                        
+                    frame_logs = results["frame_logs"]
+                    if frame_logs:
+                        y_true_frames = [f["label"] for f in frame_logs]
+                        y_scores_frames = [f["similarity_score"] for f in frame_logs]
+                        
+                        auc_val = evaluator.calculate_auc(y_true_frames, y_scores_frames)
+                        tar_at_far = evaluator.calculate_tar_at_far(y_true_frames, y_scores_frames, far_threshold=0.01)
+                        
+                        recalls_1 = [evaluator.calculate_recall_at_k(f["true_id"], f["retrieved_ids"], k=1) for f in frame_logs]
+                        recalls_3 = [evaluator.calculate_recall_at_k(f["true_id"], f["retrieved_ids"], k=3) for f in frame_logs]
+                        precisions_1 = [evaluator.calculate_precision_at_k(f["true_id"], f["retrieved_ids"], k=1) for f in frame_logs]
+                        precisions_3 = [evaluator.calculate_precision_at_k(f["true_id"], f["retrieved_ids"], k=3) for f in frame_logs]
+                        
+                        recall_at_1 = float(np.mean(recalls_1))
+                        recall_at_3 = float(np.mean(recalls_3))
+                        precision_at_1 = float(np.mean(precisions_1))
+                        precision_at_3 = float(np.mean(precisions_3))
+                    else:
+                        auc_val = 0.0
+                        tar_at_far = 0.0
+                        recall_at_1 = 0.0
+                        recall_at_3 = 0.0
+                        precision_at_1 = 0.0
+                        precision_at_3 = 0.0
+                        
+                    avg_time = results["avg_inference_time_ms"]
                     
-                    # 2. Acumula logs frame-a-frame de métricas
-                    all_frame_logs.extend(results["frame_logs"])
+                    # Salva os track_results (track-level) em data/results/[video]/[model].csv
+                    video_result_dir = os.path.join(results_dir, video)
+                    model_csv_path = os.path.join(video_result_dir, f"{model_name}.csv")
+                    with open(model_csv_path, mode="w", newline="", encoding="utf-8") as f:
+                        writer = csv.writer(f)
+                        writer.writerow(["video", "track_id", "ground_truth", "predicted", "correct"])
+                        for row in track_results:
+                            writer.writerow([
+                                row["video"], 
+                                row["track_id"], 
+                                row["ground_truth"], 
+                                row["predicted"], 
+                                str(row["correct"])
+                            ])
+                    print(f"     -> Salvo resultados de tracks em: {model_csv_path}")
                     
-                    # 3. Guarda tempo médio de inferência do vídeo
-                    video_inference_times.append(results["avg_inference_time_ms"])
+                    # Acumula no data.csv do vídeo
+                    summary_csv_path = os.path.join(video_result_dir, "data.csv")
+                    with open(summary_csv_path, mode="a", newline="", encoding="utf-8") as f:
+                        writer = csv.writer(f)
+                        writer.writerow([
+                            model_name,
+                            f"{accuracy:.4f}",
+                            f"{auc_val:.4f}",
+                            f"{tar_at_far:.4f}",
+                            f"{recall_at_1:.4f}",
+                            f"{recall_at_3:.4f}",
+                            f"{precision_at_1:.4f}",
+                            f"{precision_at_3:.4f}",
+                            f"{avg_time:.2f}"
+                        ])
+                    
                 else:
                     print(f"     Status: Falha | Motivo: {results.get('reason')}")
-            
-            # --- Cálculo de Métricas Finais do Modelo ---
-            
-            # Acurácia (Track-level)
-            if track_results:
-                y_true_tracks = [t["ground_truth"] for t in track_results]
-                y_pred_tracks = [t["predicted"] for t in track_results]
-                accuracy = evaluator.calculate_accuracy(y_true_tracks, y_pred_tracks)
-            else:
-                accuracy = 0.0
-                
-            # Métricas Frame-level (AUC, TAR@FAR, Precision/Recall@K)
-            if all_frame_logs:
-                y_true_frames = [f["label"] for f in all_frame_logs]
-                y_scores_frames = [f["similarity_score"] for f in all_frame_logs]
-                
-                # AUC e TAR@FAR 1%
-                auc_val = evaluator.calculate_auc(y_true_frames, y_scores_frames)
-                tar_at_far = evaluator.calculate_tar_at_far(y_true_frames, y_scores_frames, far_threshold=0.01)
-                
-                # Recall@K e Precision@K
-                recalls_1 = [evaluator.calculate_recall_at_k(f["true_id"], f["retrieved_ids"], k=1) for f in all_frame_logs]
-                recalls_3 = [evaluator.calculate_recall_at_k(f["true_id"], f["retrieved_ids"], k=3) for f in all_frame_logs]
-                precisions_1 = [evaluator.calculate_precision_at_k(f["true_id"], f["retrieved_ids"], k=1) for f in all_frame_logs]
-                precisions_3 = [evaluator.calculate_precision_at_k(f["true_id"], f["retrieved_ids"], k=3) for f in all_frame_logs]
-                
-                recall_at_1 = float(np.mean(recalls_1))
-                recall_at_3 = float(np.mean(recalls_3))
-                precision_at_1 = float(np.mean(precisions_1))
-                precision_at_3 = float(np.mean(precisions_3))
-            else:
-                auc_val = 0.0
-                tar_at_far = 0.0
-                recall_at_1 = 0.0
-                recall_at_3 = 0.0
-                precision_at_1 = 0.0
-                precision_at_3 = 0.0
-                
-            # Tempo Médio de Extração (ms)
-            avg_time = float(np.mean(video_inference_times)) if video_inference_times else 0.0
-            
-            # --- Gravação dos Arquivos de Saída ---
-            
-            # 1. Exporta [modelo].csv
-            model_csv_path = os.path.join(results_dir, f"{model_name}.csv")
-            with open(model_csv_path, mode="w", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                writer.writerow(["video", "track_id", "ground_truth", "predicted", "correct"])
-                for row in track_results:
-                    writer.writerow([
-                        row["video"], 
-                        row["track_id"], 
-                        row["ground_truth"], 
-                        row["predicted"], 
-                        str(row["correct"])
-                    ])
-            print(f"     -> Salvo resultados de tracks em: {model_csv_path}")
-            
-            # 2. Append no data.csv
-            with open(summary_csv_path, mode="a", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                writer.writerow([
-                    model_name,
-                    f"{accuracy:.4f}",
-                    f"{auc_val:.4f}",
-                    f"{tar_at_far:.4f}",
-                    f"{recall_at_1:.4f}",
-                    f"{recall_at_3:.4f}",
-                    f"{precision_at_1:.4f}",
-                    f"{precision_at_3:.4f}",
-                    f"{avg_time:.2f}"
-                ])
-            print(f"     -> Acumulado resumo comparativo em: {summary_csv_path}")
-            
-            # Limpeza rígida de memória e coleções
+
             pipeline.cleanup()
             del pipeline
             gc.collect()

@@ -18,6 +18,7 @@ def test_database_populate_real_directory(tmp_path):
 
     db = VectorDatabase(model_name="test_walk")
     db.collection = MagicMock()
+    db.collection.count.return_value = 0
 
     mock_recognizer = MagicMock()
     mock_recognizer.extract_embedding_with_filters.return_value = [0.1] * 512
@@ -35,6 +36,7 @@ def test_database_populate_flat_directory(tmp_path):
 
     db = VectorDatabase(model_name="test_flat")
     db.collection = MagicMock()
+    db.collection.count.return_value = 0
 
     mock_recognizer = MagicMock()
     mock_recognizer.extract_embedding_with_filters.return_value = [0.5] * 512
@@ -52,6 +54,7 @@ def test_database_populate_skips_when_imread_returns_none(tmp_path):
 
     db = VectorDatabase(model_name="test_none")
     db.collection = MagicMock()
+    db.collection.count.return_value = 0
 
     mock_recognizer = MagicMock()
 
@@ -68,6 +71,7 @@ def test_database_populate_skips_when_embedding_is_none(tmp_path):
 
     db = VectorDatabase(model_name="test_emb_none")
     db.collection = MagicMock()
+    db.collection.count.return_value = 0
 
     mock_recognizer = MagicMock()
     mock_recognizer.extract_embedding_with_filters.return_value = None
@@ -110,16 +114,14 @@ def test_database_query_top_k_returns_empty_on_exception():
 
 
 def test_database_cleanup_deletes_collection():
-    """cleanup tenta deletar a coleção sem lançar exceções."""
+    """cleanup não deve lançar exceções."""
     db = VectorDatabase(model_name="test_cleanup")
     db.client = MagicMock()
     db.cleanup()
-    db.client.delete_collection.assert_called_once_with(name="test_cleanup")
+    db.client.delete_collection.assert_not_called()
 
 
 def test_database_cleanup_silences_exceptions():
-    """cleanup não propaga exceções do ChromaDB."""
+    """cleanup não propaga exceções."""
     db = VectorDatabase(model_name="test_cleanup_exc")
-    db.client = MagicMock()
-    db.client.delete_collection.side_effect = Exception("erro")
     db.cleanup()  # Não deve lançar
