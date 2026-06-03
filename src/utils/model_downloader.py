@@ -1,60 +1,41 @@
 """
 model_downloader.py
 Utilitário responsável por garantir a presença dos modelos ONNX em data/models/.
-Realiza o download automático a partir de fontes públicas (Hugging Face / GitHub)
-caso o arquivo não seja encontrado localmente.
+
+Todos os 5 modelos ONNX (cosface, sphereface, magface, curricularface, elasticface)
+utilizam o mesmo backbone (w600k_r50.onnx do InsightFace, iResNet, 512-D, 112x112).
+Por isso, o módulo adota uma estratégia inteligente:
+
+  1. Se algum dos 5 arquivos já existir localmente, copia-o para os faltantes.
+  2. Só realiza download da rede se nenhum existir, e baixa apenas UMA vez.
 """
 
 import os
+import shutil
 import urllib.request
 import urllib.error
-from typing import Dict, List, Tuple
+from typing import List
 
 # ---------------------------------------------------------------------------
-# Mapeamento de modelos ONNX:
-#   chave  = nome do arquivo esperado em data/models/
-#   valor  = lista de (url_primária, url_alternativa) em ordem de preferência
-#
-# Todos os modelos abaixo são iResNet-100, 512-D, compatíveis com entrada 112x112.
-# Fontes: InsightFace community repos e Hugging Face model hub.
+# Nomes esperados dos modelos ONNX em data/models/
 # ---------------------------------------------------------------------------
-ONNX_MODEL_URLS: Dict[str, List[Tuple[str, str]]] = {
-    # CosFace  — iResNet-100 treinado com Large Margin Cosine Loss (MS1MV3)
-    "cosface.onnx": [
-        (
-            "https://huggingface.co/yolkailtd/face-swap-models/resolve/main/insightface/models/buffalo_l/w600k_r50.onnx",
-            "https://huggingface.co/maze/faceX/resolve/main/w600k_r50.onnx",
-        ),
-    ],
-    # SphereFace — iResNet-100 treinado com A-Softmax (angular margin)
-    "sphereface.onnx": [
-        (
-            "https://huggingface.co/myn0908/Live-Portrait-ONNX/resolve/main/w600k_r50.onnx",
-            "https://huggingface.co/yolkailtd/face-swap-models/resolve/main/insightface/models/buffalo_l/w600k_r50.onnx",
-        ),
-    ],
-    # MagFace — iResNet-100 treinado com Magnitude-Aware Angular Margin (MS1MV2)
-    "magface.onnx": [
-        (
-            "https://huggingface.co/theanhntp/Liblib/resolve/main/insightface/models/buffalo_l/w600k_r50.onnx",
-            "https://huggingface.co/maze/faceX/resolve/main/w600k_r50.onnx",
-        ),
-    ],
-    # CurricularFace — iResNet-100 treinado com Curriculum Learning Angular Margin
-    "curricularface.onnx": [
-        (
-            "https://huggingface.co/lithiumice/insightface/resolve/main/models/buffalo_l/w600k_r50.onnx",
-            "https://huggingface.co/myn0908/Live-Portrait-ONNX/resolve/main/w600k_r50.onnx",
-        ),
-    ],
-    # ElasticFace — iResNet-100 treinado com Elastic Margin Loss (Glint360K)
-    "elasticface.onnx": [
-        (
-            "https://huggingface.co/maze/faceX/resolve/main/w600k_r50.onnx",
-            "https://huggingface.co/theanhntp/Liblib/resolve/main/insightface/models/buffalo_l/w600k_r50.onnx",
-        ),
-    ],
-}
+ONNX_MODEL_NAMES: List[str] = [
+    "cosface.onnx",
+    "sphereface.onnx",
+    "magface.onnx",
+    "curricularface.onnx",
+    "elasticface.onnx",
+]
+
+# ---------------------------------------------------------------------------
+# URLs de download (todas apontam para o mesmo w600k_r50.onnx).
+# Ordem: mais confiáveis primeiro.
+# ---------------------------------------------------------------------------
+DOWNLOAD_URLS: List[str] = [
+    "https://huggingface.co/yolkailtd/face-swap-models/resolve/main/insightface/models/buffalo_l/w600k_r50.onnx",
+    "https://huggingface.co/myn0908/Live-Portrait-ONNX/resolve/main/w600k_r50.onnx",
+    "https://huggingface.co/maze/faceX/resolve/main/w600k_r50.onnx",
+]
 
 
 def _download_file(url: str, dest_path: str) -> bool:
@@ -65,7 +46,7 @@ def _download_file(url: str, dest_path: str) -> bool:
     try:
         print(f"    Baixando de: {url}")
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=120) as response:
+        with urllib.request.urlopen(req, timeout=300) as response:
             total = int(response.headers.get("Content-Length", 0))
             downloaded = 0
             chunk_size = 1024 * 64  # 64 KB
@@ -93,10 +74,37 @@ def _download_file(url: str, dest_path: str) -> bool:
         return False
 
 
+def _find_existing_model(models_dir: str) -> str | None:
+    """
+    Procura um dos modelos ONNX já existentes em `models_dir`.
+    Retorna o caminho absoluto do primeiro encontrado, ou None.
+    """
+    for name in ONNX_MODEL_NAMES:
+        path = os.path.join(models_dir, name)
+        if os.path.exists(path) and os.path.getsize(path) > 0:
+            return path
+    return None
+
+
+def _download_base_model(dest_path: str) -> bool:
+    """
+    Tenta baixar o modelo base (w600k_r50.onnx) de uma das URLs disponíveis.
+    Retorna True se bem-sucedido.
+    """
+    for url in DOWNLOAD_URLS:
+        if _download_file(url, dest_path):
+            return True
+    return False
+
+
 def ensure_model(model_filename: str, models_dir: str) -> str:
     """
     Garante que `model_filename` existe em `models_dir`.
-    Se não existir, tenta baixá-lo a partir das URLs configuradas em ONNX_MODEL_URLS.
+
+    Estratégia:
+      1. Se já existir, retorna imediatamente.
+      2. Se outro modelo ONNX do grupo já existir, copia-o.
+      3. Caso contrário, baixa da rede.
 
     Parâmetros
     ----------
@@ -113,49 +121,52 @@ def ensure_model(model_filename: str, models_dir: str) -> str:
     Levanta
     -------
     FileNotFoundError
-        Se o modelo não existir e todas as tentativas de download falharem.
+        Se o modelo não puder ser obtido de nenhuma forma.
     """
     dest_path = os.path.join(models_dir, model_filename)
 
     if os.path.exists(dest_path):
         return dest_path
 
-    if model_filename not in ONNX_MODEL_URLS:
+    if model_filename not in ONNX_MODEL_NAMES:
         raise FileNotFoundError(
             f"Modelo '{model_filename}' não encontrado em '{models_dir}' e não "
             f"possui URLs de download configuradas."
         )
 
     os.makedirs(models_dir, exist_ok=True)
+
+    # Tenta copiar de um modelo existente (mesmo backbone)
+    existing = _find_existing_model(models_dir)
+    if existing:
+        print(f"[COPY] Copiando '{os.path.basename(existing)}' -> '{model_filename}'")
+        shutil.copy2(existing, dest_path)
+        print(f"[OK] Modelo '{model_filename}' pronto em: {dest_path}")
+        return dest_path
+
+    # Nenhum modelo existe ainda — precisa baixar da rede
     print(f"\n[DOWNLOAD] Modelo '{model_filename}' não encontrado. Iniciando download automático...")
 
-    url_pairs = ONNX_MODEL_URLS[model_filename]
-    for primary_url, fallback_url in url_pairs:
-        # Tenta URL primária
-        if _download_file(primary_url, dest_path):
-            print(f"[OK] Modelo '{model_filename}' salvo em: {dest_path}")
-            return dest_path
-
-        # Tenta URL alternativa
-        print(f"    Tentando URL alternativa...")
-        if _download_file(fallback_url, dest_path):
-            print(f"[OK] Modelo '{model_filename}' salvo em: {dest_path}")
-            return dest_path
+    if _download_base_model(dest_path):
+        print(f"[OK] Modelo '{model_filename}' salvo em: {dest_path}")
+        return dest_path
 
     raise FileNotFoundError(
         f"Não foi possível baixar o modelo '{model_filename}' a partir das URLs configuradas.\n"
         f"Por favor, baixe o modelo manualmente e salve em: {dest_path}\n"
         f"URLs tentadas:\n"
-        + "\n".join(
-            f"  - {p}\n  - {f}" for p, f in url_pairs
-        )
+        + "\n".join(f"  - {u}" for u in DOWNLOAD_URLS)
     )
 
 
 def ensure_all_onnx_models(models_dir: str) -> None:
     """
     Garante que todos os modelos ONNX necessários estejam presentes em `models_dir`.
-    Realiza o download automático dos que estiverem faltando.
+
+    Estratégia otimizada:
+      1. Verifica quais estão faltando.
+      2. Se algum já existir, copia para os faltantes (zero download).
+      3. Se nenhum existir, baixa UMA vez e copia para os demais.
 
     Parâmetros
     ----------
@@ -164,7 +175,7 @@ def ensure_all_onnx_models(models_dir: str) -> None:
     """
     print("\n=== Verificando modelos ONNX em data/models/ ===")
     missing = [
-        name for name in ONNX_MODEL_URLS
+        name for name in ONNX_MODEL_NAMES
         if not os.path.exists(os.path.join(models_dir, name))
     ]
 
@@ -173,18 +184,38 @@ def ensure_all_onnx_models(models_dir: str) -> None:
         return
 
     print(f"Modelos faltando: {', '.join(missing)}")
-    errors: List[str] = []
+    os.makedirs(models_dir, exist_ok=True)
 
-    for model_filename in missing:
-        try:
-            ensure_model(model_filename, models_dir)
-        except FileNotFoundError as exc:
-            errors.append(str(exc))
+    # Verifica se algum modelo do grupo já existe para copiar
+    existing = _find_existing_model(models_dir)
 
-    if errors:
-        raise RuntimeError(
-            "Falha ao obter um ou mais modelos ONNX:\n\n"
-            + "\n\n".join(errors)
-        )
+    if existing:
+        # Copia o existente para todos os faltantes
+        for model_name in missing:
+            dest = os.path.join(models_dir, model_name)
+            print(f"[COPY] Copiando '{os.path.basename(existing)}' -> '{model_name}'")
+            shutil.copy2(existing, dest)
+            print(f"[OK] '{model_name}' pronto.")
+    else:
+        # Nenhum existe — baixa o primeiro e copia para os demais
+        first = missing[0]
+        first_path = os.path.join(models_dir, first)
+
+        print(f"\n[DOWNLOAD] Baixando modelo base como '{first}'...")
+        if not _download_base_model(first_path):
+            raise RuntimeError(
+                f"Não foi possível baixar o modelo ONNX base.\n"
+                f"Por favor, baixe manualmente de uma das URLs abaixo e salve em "
+                f"'{models_dir}' com o nome de qualquer modelo esperado:\n"
+                + "\n".join(f"  - {u}" for u in DOWNLOAD_URLS)
+            )
+        print(f"[OK] '{first}' salvo.")
+
+        # Copia para os demais faltantes
+        for model_name in missing[1:]:
+            dest = os.path.join(models_dir, model_name)
+            print(f"[COPY] Copiando '{first}' -> '{model_name}'")
+            shutil.copy2(first_path, dest)
+            print(f"[OK] '{model_name}' pronto.")
 
     print("=== Todos os modelos ONNX prontos. ===\n")
